@@ -1,0 +1,188 @@
+<idea-plugin>
+    <id>com.kacmedija.claudeassist</id>
+    <name>Claude Assist</name>
+    <vendor email="info@kacmedija.com" url="https://kacmedija.com">
+        Kacmedija
+    </vendor>
+
+    <description><![CDATA[
+    <h2>Claude Assist — Deep AI Integration for JetBrains</h2>
+    <p>Transforms Claude CLI from a terminal tool into a full IDE-integrated AI assistant.</p>
+
+    <h3>Features</h3>
+    <ul>
+        <li><b>Chat Panel</b> — Streaming AI chat with full project awareness</li>
+        <li><b>Inline Edit</b> — Select code → describe change → see diff preview → apply</li>
+        <li><b>Fix Diagnostics</b> — One-click AI fix for errors and warnings</li>
+        <li><b>Code Review</b> — AI-powered review of files or selections</li>
+        <li><b>Generate Tests</b> — Auto-generate unit tests for any file</li>
+        <li><b>Generate Docs</b> — PHPDoc / JSDoc / docblocks from code</li>
+        <li><b>Refactor</b> — AI-assisted refactoring with diff preview</li>
+        <li><b>Commit Messages</b> — Generate meaningful commit messages from staged changes</li>
+        <li><b>Context Files</b> — Explicitly include files for richer AI responses</li>
+        <li><b>WSL2 Support</b> — Seamless bridge for Windows users</li>
+    </ul>
+
+    <h3>Requirements</h3>
+    <ul>
+        <li>Claude Code CLI installed (<code>npm install -g @anthropic-ai/claude-code</code>)</li>
+        <li>On Windows: WSL2 with Claude CLI inside the distro</li>
+    </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.terminal</depends>
+    <depends optional="true" config-file="php-support.xml">com.jetbrains.php</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Services -->
+        <applicationService
+            serviceImplementation="com.kacmedija.claudeassist.services.ClaudeAssistService"/>
+        <applicationService
+            serviceImplementation="com.kacmedija.claudeassist.services.StreamJsonService"/>
+        <projectService
+            serviceImplementation="com.kacmedija.claudeassist.services.ContextManager"/>
+        <projectService
+            serviceImplementation="com.kacmedija.claudeassist.services.SessionManager"/>
+        <projectService
+            serviceImplementation="com.kacmedija.claudeassist.review.CodeReviewService"/>
+        <projectService
+            serviceImplementation="com.kacmedija.claudeassist.context.ProjectContextService"/>
+        <projectService
+            serviceImplementation="com.kacmedija.claudeassist.agents.AgentService"/>
+        <projectService
+            serviceImplementation="com.kacmedija.claudeassist.projectsettings.ClaudeMdService"/>
+        <projectService
+            serviceImplementation="com.kacmedija.claudeassist.projectsettings.PermissionsService"/>
+
+        <!-- Tool Window -->
+        <toolWindow
+            id="Claude Assist"
+            anchor="right"
+            icon="/icons/claude-13.svg"
+            factoryClass="com.kacmedija.claudeassist.toolwindow.TerminalToolWindowFactory"/>
+
+        <!-- Settings -->
+        <applicationConfigurable
+            parentId="tools"
+            instance="com.kacmedija.claudeassist.settings.ClaudeAssistConfigurable"
+            id="com.kacmedija.claudeassist.settings"
+            displayName="Claude Assist"/>
+        <applicationService
+            serviceImplementation="com.kacmedija.claudeassist.settings.ClaudeAssistSettings"/>
+
+        <!-- Editor Features -->
+        <intentionAction>
+            <className>com.kacmedija.claudeassist.editor.FixWithClaudeIntention</className>
+            <category>Claude Assist</category>
+        </intentionAction>
+
+        <!-- Startup -->
+        <postStartupActivity
+            implementation="com.kacmedija.claudeassist.services.ClaudeAssistStartupActivity"/>
+
+        <!-- Status Bar -->
+        <statusBarWidgetFactory
+            id="ClaudeAssistStatus"
+            implementation="com.kacmedija.claudeassist.toolwindow.ClaudeAssistStatusBarWidgetFactory"/>
+
+        <!-- Notifications -->
+        <notificationGroup id="Claude Assist Notifications"
+                          displayType="BALLOON"
+                          isLogByDefault="true"/>
+    </extensions>
+
+    <actions>
+        <!-- Main Menu Group -->
+        <group id="ClaudeAssist.MainMenu" text="Claude Assist" popup="true"
+               description="Claude Assist AI actions">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+
+            <action id="ClaudeAssist.OpenChat"
+                    class="com.kacmedija.claudeassist.actions.OpenChatAction"
+                    text="Open Chat"
+                    description="Open the Claude Assist chat panel"
+                    icon="AllIcons.Actions.Preview">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift C"/>
+            </action>
+
+            <separator/>
+
+            <action id="ClaudeAssist.InlineEdit"
+                    class="com.kacmedija.claudeassist.actions.InlineEditAction"
+                    text="Inline Edit..."
+                    description="Edit selected code with Claude"
+                    icon="AllIcons.Actions.Edit">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift E"/>
+            </action>
+
+            <action id="ClaudeAssist.ExplainSelection"
+                    class="com.kacmedija.claudeassist.actions.ExplainSelectionAction"
+                    text="Explain Selection"
+                    description="Explain the selected code">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift X"/>
+            </action>
+
+            <action id="ClaudeAssist.RefactorSelection"
+                    class="com.kacmedija.claudeassist.actions.RefactorAction"
+                    text="Refactor Selection..."
+                    description="Refactor selected code with Claude"/>
+
+            <separator/>
+
+            <action id="ClaudeAssist.FixDiagnostics"
+                    class="com.kacmedija.claudeassist.actions.FixDiagnosticsAction"
+                    text="Fix Diagnostics"
+                    description="Fix current file errors with Claude"
+                    icon="AllIcons.Actions.QuickfixBulb">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift F"/>
+            </action>
+
+            <action id="ClaudeAssist.GenerateTests"
+                    class="com.kacmedija.claudeassist.actions.GenerateTestsAction"
+                    text="Generate Tests"
+                    description="Generate unit tests for current file"/>
+
+            <action id="ClaudeAssist.GenerateDocs"
+                    class="com.kacmedija.claudeassist.actions.GenerateDocsAction"
+                    text="Generate Documentation"
+                    description="Generate doc comments for current file"/>
+
+            <action id="ClaudeAssist.ReviewFile"
+                    class="com.kacmedija.claudeassist.actions.ReviewFileAction"
+                    text="Code Review"
+                    description="AI code review of current file"/>
+
+            <separator/>
+
+            <action id="ClaudeAssist.CommitMessage"
+                    class="com.kacmedija.claudeassist.actions.CommitMessageAction"
+                    text="Generate Commit Message"
+                    description="Generate commit message from staged changes"/>
+        </group>
+
+        <!-- Editor Context Menu -->
+        <group id="ClaudeAssist.EditorPopup" text="Claude Assist" popup="true"
+               icon="AllIcons.Actions.Preview">
+            <add-to-group group-id="EditorPopupMenu" anchor="before"
+                          relative-to-action="EditorPopupMenu1"/>
+
+            <reference ref="ClaudeAssist.InlineEdit"/>
+            <reference ref="ClaudeAssist.ExplainSelection"/>
+            <reference ref="ClaudeAssist.RefactorSelection"/>
+            <separator/>
+            <reference ref="ClaudeAssist.FixDiagnostics"/>
+            <reference ref="ClaudeAssist.GenerateTests"/>
+            <reference ref="ClaudeAssist.GenerateDocs"/>
+        </group>
+
+        <!-- Project View Context Menu -->
+        <action id="ClaudeAssist.AddToContext"
+                class="com.kacmedija.claudeassist.actions.AddToContextAction"
+                text="Add to Claude Context"
+                description="Add this file to Claude's context"
+                icon="AllIcons.General.Add">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

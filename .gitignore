@@ -1,0 +1,23 @@
+# Build
+build/
+out/
+
+# Gradle
+.gradle/
+
+# IDE
+.idea/
+*.iml
+
+# Claude Code local config
+.claude/
+
+# Compiled
+*.class
+
+# Packages (keep gradle-wrapper.jar)
+!gradle/wrapper/gradle-wrapper.jar
+
+# OS
+.DS_Store
+Thumbs.db
