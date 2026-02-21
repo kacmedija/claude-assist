@@ -35,54 +35,35 @@ public final class ClaudeAssistService {
         return ApplicationManager.getApplication().getService(ClaudeAssistService.class);
     }
 
-    // ── Path Conversion ───────────────────────────────────────────
+    // ── Path Conversion (delegates to CommandExecutor) ────────────
 
     /**
      * Converts a Windows path to a WSL-compatible path.
-     * <ul>
-     *   <li>Drive-letter paths: C:/Users/dev  to  /mnt/c/Users/dev</li>
-     *   <li>WSL UNC paths: //wsl.localhost/Distro/home/dev  to  /home/dev</li>
-     *   <li>WSL UNC paths: //wsl$/Distro/home/dev  to  /home/dev</li>
-     * </ul>
-     * Paths that are already POSIX-style are returned as-is.
+     * @deprecated Use {@link CommandExecutor#toWslPath(String)} directly.
      */
+    @Deprecated
     public static String toWslPath(@NotNull String windowsPath) {
-        String normalized = windowsPath.replace('\\', '/');
-
-        // WSL UNC paths: //wsl.localhost/<distro>/<path> or //wsl$/<distro>/<path>
-        // The real path inside WSL is everything after the distro segment.
-        if (normalized.startsWith("//wsl.localhost/") || normalized.startsWith("//wsl$/")) {
-            int distroStart = normalized.indexOf('/', 2);   // slash before distro name
-            if (distroStart >= 0) {
-                int pathStart = normalized.indexOf('/', distroStart + 1); // slash after distro name
-                if (pathStart >= 0) {
-                    return normalized.substring(pathStart);
-                }
-            }
-            // Malformed UNC — fall through to return normalized
-        }
-
-        // Drive-letter paths: C:\Users\dev → /mnt/c/Users/dev
-        if (normalized.length() >= 2 && normalized.charAt(1) == ':') {
-            char drive = Character.toLowerCase(normalized.charAt(0));
-            String rest = normalized.substring(2);
-            return "/mnt/" + drive + rest;
-        }
-
-        return normalized;
+        return CommandExecutor.toWslPath(windowsPath);
     }
 
     /**
      * Converts a WSL path back to Windows format.
-     * Example: /mnt/c/Users/dev → C:\Users\dev
+     * @deprecated Use {@link CommandExecutor#toWindowsPath(String)} directly.
      */
+    @Deprecated
     public static String toWindowsPath(@NotNull String wslPath) {
-        if (wslPath.startsWith("/mnt/") && wslPath.length() > 5) {
-            char drive = Character.toUpperCase(wslPath.charAt(5));
-            String rest = wslPath.substring(6).replace('/', '\\');
-            return drive + ":" + rest;
-        }
-        return wslPath;
+        return CommandExecutor.toWindowsPath(wslPath);
+    }
+
+    // ── Platform Detection (delegates to CommandExecutor) ─────────
+
+    /**
+     * Returns {@code true} when running on native Windows (not inside WSL).
+     * @deprecated Use {@link CommandExecutor#isNativeWindows()} directly.
+     */
+    @Deprecated
+    public static boolean isNativeWindows() {
+        return CommandExecutor.isNativeWindows();
     }
 
     // ── Core Execution (Deprecated) ──────────────────────────────
@@ -118,11 +99,20 @@ public final class ClaudeAssistService {
                 tempFile = Files.createTempFile("claude-prompt-", ".txt");
                 Files.writeString(tempFile, prompt, StandardCharsets.UTF_8);
 
-                List<String> command = buildCommand(settings, tempFile, workDir, sessionId);
+                List<String> cliArgs = new ArrayList<>();
+                cliArgs.add("--print");
+                if (sessionId != null && !sessionId.isEmpty()) {
+                    cliArgs.add("--session-id");
+                    cliArgs.add(sessionId);
+                }
 
-                LOG.info("Executing: " + String.join(" ", command));
+                CommandExecutor.ProcessSpec spec = CommandExecutor.claude(
+                        settings, tempFile, workDir,
+                        cliArgs.toArray(new String[0]));
 
-                ProcessBuilder pb = new ProcessBuilder(command);
+                LOG.info("Executing: " + String.join(" ", spec.command()));
+
+                ProcessBuilder pb = spec.createProcessBuilder();
                 pb.redirectErrorStream(false);
 
                 Process process = pb.start();
@@ -181,62 +171,6 @@ public final class ClaudeAssistService {
         });
     }
 
-    // ── Command Building ──────────────────────────────────────────
-
-    private List<String> buildCommand(
-            ClaudeAssistSettings.State settings,
-            Path promptTempFile,
-            @Nullable String workDir,
-            @Nullable String sessionId
-    ) {
-        List<String> command = new ArrayList<>();
-
-        String claudeArgs = buildClaudeArgs(settings, sessionId);
-
-        if (settings.useWsl) {
-            command.add("wsl.exe");
-            if (!settings.wslDistro.isEmpty()) {
-                command.add("-d");
-                command.add(settings.wslDistro);
-            }
-            command.add("--");
-            command.add("bash");
-            command.add("-lc");
-
-            String wslTempPath = toWslPath(promptTempFile.toString());
-            String wslWorkDir = workDir != null ? toWslPath(workDir) : null;
-            String cdPart = wslWorkDir != null ? "cd '" + wslWorkDir + "' && " : "";
-
-            String bashCmd = cdPart + "cat '" + wslTempPath + "' | "
-                           + settings.claudePath + " " + claudeArgs;
-            command.add(bashCmd);
-        } else {
-            command.add("bash");
-            command.add("-lc");
-
-            String cdPart = workDir != null ? "cd '" + workDir + "' && " : "";
-            String bashCmd = cdPart + "cat '" + promptTempFile.toString() + "' | "
-                           + settings.claudePath + " " + claudeArgs;
-            command.add(bashCmd);
-        }
-
-        return command;
-    }
-
-    private String buildClaudeArgs(ClaudeAssistSettings.State settings, @Nullable String sessionId) {
-        StringBuilder args = new StringBuilder("--print");
-
-        if (!settings.model.isEmpty()) {
-            args.append(" --model '").append(settings.model).append("'");
-        }
-
-        if (sessionId != null && !sessionId.isEmpty()) {
-            args.append(" --session-id '").append(sessionId).append("'");
-        }
-
-        return args.toString();
-    }
-
     // ── Process Control ───────────────────────────────────────────
 
     /**
@@ -280,25 +214,11 @@ public final class ClaudeAssistService {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 ClaudeAssistSettings.State settings = getSettings();
-                List<String> cmd = new ArrayList<>();
 
-                if (settings.useWsl) {
-                    cmd.add("wsl.exe");
-                    if (!settings.wslDistro.isEmpty()) {
-                        cmd.add("-d");
-                        cmd.add(settings.wslDistro);
-                    }
-                    cmd.add("--");
-                    cmd.add("bash");
-                    cmd.add("-lc");
-                    cmd.add(settings.claudePath + " --version");
-                } else {
-                    cmd.add("bash");
-                    cmd.add("-lc");
-                    cmd.add(settings.claudePath + " --version");
-                }
+                CommandExecutor.ProcessSpec spec = CommandExecutor.direct(
+                        settings, settings.claudePath, "--version");
 
-                ProcessBuilder pb = new ProcessBuilder(cmd);
+                ProcessBuilder pb = spec.createProcessBuilder();
                 pb.redirectErrorStream(true);
                 Process proc = pb.start();
 

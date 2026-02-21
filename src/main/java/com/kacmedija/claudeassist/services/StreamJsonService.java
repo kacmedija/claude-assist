@@ -101,11 +101,13 @@ public final class StreamJsonService {
                 tempFile = Files.createTempFile("claude-prompt-", ".txt");
                 Files.writeString(tempFile, prompt, StandardCharsets.UTF_8);
 
-                List<String> command = buildCommand(settings, tempFile, workDir);
+                CommandExecutor.ProcessSpec spec = CommandExecutor.claude(
+                        settings, tempFile, workDir,
+                        "--print", "--verbose", "--output-format", "stream-json");
 
-                LOG.info("StreamJson executing: " + String.join(" ", command));
+                LOG.info("StreamJson executing: " + String.join(" ", spec.command()));
 
-                ProcessBuilder pb = new ProcessBuilder(command);
+                ProcessBuilder pb = spec.createProcessBuilder();
                 pb.environment().remove("CLAUDECODE");
                 pb.redirectErrorStream(false);
 
@@ -259,57 +261,6 @@ public final class StreamJsonService {
     private String getStringField(@NotNull JsonObject obj, @NotNull String field) {
         JsonElement el = obj.get(field);
         return (el != null && el.isJsonPrimitive()) ? el.getAsString() : null;
-    }
-
-    // ── Command Building ──────────────────────────────────────────
-
-    private List<String> buildCommand(
-            ClaudeAssistSettings.State settings,
-            Path promptTempFile,
-            @Nullable String workDir
-    ) {
-        List<String> command = new ArrayList<>();
-
-        String claudeArgs = buildClaudeArgs(settings);
-
-        if (settings.useWsl) {
-            command.add("wsl.exe");
-            if (!settings.wslDistro.isEmpty()) {
-                command.add("-d");
-                command.add(settings.wslDistro);
-            }
-            command.add("--");
-            command.add("bash");
-            command.add("-lc");
-
-            String wslTempPath = ClaudeAssistService.toWslPath(promptTempFile.toString());
-            String wslWorkDir = workDir != null ? ClaudeAssistService.toWslPath(workDir) : null;
-            String cdPart = wslWorkDir != null ? "cd '" + wslWorkDir + "' && " : "";
-
-            String bashCmd = cdPart + "cat '" + wslTempPath + "' | "
-                    + settings.claudePath + " " + claudeArgs;
-            command.add(bashCmd);
-        } else {
-            command.add("bash");
-            command.add("-lc");
-
-            String cdPart = workDir != null ? "cd '" + workDir + "' && " : "";
-            String bashCmd = cdPart + "cat '" + promptTempFile.toString() + "' | "
-                    + settings.claudePath + " " + claudeArgs;
-            command.add(bashCmd);
-        }
-
-        return command;
-    }
-
-    private String buildClaudeArgs(ClaudeAssistSettings.State settings) {
-        StringBuilder args = new StringBuilder("--print --verbose --output-format stream-json");
-
-        if (!settings.model.isEmpty()) {
-            args.append(" --model '").append(settings.model).append("'");
-        }
-
-        return args.toString();
     }
 
     // ── Process Control ───────────────────────────────────────────

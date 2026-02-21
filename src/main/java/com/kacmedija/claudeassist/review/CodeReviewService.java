@@ -1,6 +1,6 @@
 package com.kacmedija.claudeassist.review;
 
-import com.kacmedija.claudeassist.services.ClaudeAssistService;
+import com.kacmedija.claudeassist.services.CommandExecutor;
 import com.kacmedija.claudeassist.services.ContextManager;
 import com.kacmedija.claudeassist.services.StreamJsonService;
 import com.kacmedija.claudeassist.settings.ClaudeAssistSettings;
@@ -421,9 +421,12 @@ public final class CodeReviewService {
             Files.writeString(tempFile, prompt, StandardCharsets.UTF_8);
 
             String workDir = ContextManager.getInstance(project).getWorkDir();
-            List<String> command = buildClaudeCommand(settings, tempFile, workDir);
 
-            ProcessBuilder pb = new ProcessBuilder(command);
+            CommandExecutor.ProcessSpec spec = CommandExecutor.claude(
+                    settings, tempFile, workDir,
+                    "--print", "--verbose", "--output-format", "stream-json");
+
+            ProcessBuilder pb = spec.createProcessBuilder();
             pb.environment().remove("CLAUDECODE");
             pb.redirectErrorStream(false);
 
@@ -502,44 +505,6 @@ public final class CodeReviewService {
                 try { Files.deleteIfExists(tempFile); } catch (Exception ignored) {}
             }
         }
-    }
-
-    /**
-     * Builds the Claude CLI command for parallel execution.
-     */
-    @NotNull
-    private List<String> buildClaudeCommand(
-            @NotNull ClaudeAssistSettings.State settings,
-            @NotNull Path promptTempFile,
-            @Nullable String workDir
-    ) {
-        List<String> command = new ArrayList<>();
-        StringBuilder claudeArgs = new StringBuilder("--print --verbose --output-format stream-json");
-        if (!settings.model.isEmpty()) {
-            claudeArgs.append(" --model '").append(settings.model).append("'");
-        }
-
-        if (settings.useWsl) {
-            command.add("wsl.exe");
-            if (!settings.wslDistro.isEmpty()) {
-                command.add("-d");
-                command.add(settings.wslDistro);
-            }
-            command.add("--");
-            command.add("bash");
-            command.add("-lc");
-            String wslTemp = ClaudeAssistService.toWslPath(promptTempFile.toString());
-            String wslWork = workDir != null ? ClaudeAssistService.toWslPath(workDir) : null;
-            String cdPart = wslWork != null ? "cd '" + wslWork + "' && " : "";
-            command.add(cdPart + "cat '" + wslTemp + "' | " + settings.claudePath + " " + claudeArgs);
-        } else {
-            command.add("bash");
-            command.add("-lc");
-            String cdPart = workDir != null ? "cd '" + workDir + "' && " : "";
-            command.add(cdPart + "cat '" + promptTempFile + "' | " + settings.claudePath + " " + claudeArgs);
-        }
-
-        return command;
     }
 
     // ── File Gathering (EDT-safe) ──────────────────────────────────
@@ -708,27 +673,10 @@ public final class CodeReviewService {
 
     @NotNull
     private List<String> runGitCommand(@NotNull String basePath, @NotNull String gitCmd) throws Exception {
-        List<String> command = new ArrayList<>();
         ClaudeAssistSettings.State settings = getSettings();
 
-        if (settings.useWsl) {
-            command.add("wsl.exe");
-            if (!settings.wslDistro.isEmpty()) {
-                command.add("-d");
-                command.add(settings.wslDistro);
-            }
-            command.add("--");
-            command.add("bash");
-            command.add("-c");
-            String wslPath = ClaudeAssistService.toWslPath(basePath);
-            command.add("cd '" + wslPath + "' && " + gitCmd);
-        } else {
-            command.add("bash");
-            command.add("-c");
-            command.add("cd '" + basePath + "' && " + gitCmd);
-        }
-
-        ProcessBuilder pb = new ProcessBuilder(command);
+        CommandExecutor.ProcessSpec spec = CommandExecutor.shell(settings, gitCmd, basePath);
+        ProcessBuilder pb = spec.createProcessBuilder();
         pb.redirectErrorStream(false);
         Process process = pb.start();
 

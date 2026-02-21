@@ -1,6 +1,6 @@
 package com.kacmedija.claudeassist.toolwindow;
 
-import com.kacmedija.claudeassist.services.ClaudeAssistService;
+import com.kacmedija.claudeassist.services.CommandExecutor;
 import com.kacmedija.claudeassist.settings.ClaudeAssistSettings;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
@@ -99,17 +99,27 @@ public class ClaudeTerminalPanel extends JPanel implements Disposable {
             ClaudeAssistSettings.State settings = getSettings();
             String projectPath = project.getBasePath();
 
-            List<String> command = buildCommand(settings, projectPath);
+            List<String> cliArgs = new ArrayList<>();
+            if (!settings.model.isEmpty()) {
+                cliArgs.add("--model");
+                cliArgs.add(settings.model);
+            }
+            CommandExecutor.ProcessSpec spec = CommandExecutor.interactive(
+                    settings, projectPath, cliArgs.toArray(new String[0]));
+
             Map<String, String> env = new HashMap<>(System.getenv());
             env.put("TERM", "xterm-256color");
             env.remove("CLAUDECODE");
 
-            LOG.info("Starting Claude terminal: " + String.join(" ", command));
+            LOG.info("Starting Claude terminal: " + String.join(" ", spec.command()));
 
-            ptyProcess = new PtyProcessBuilder(command.toArray(new String[0]))
+            PtyProcessBuilder ptyBuilder = new PtyProcessBuilder(spec.command().toArray(new String[0]))
                     .setEnvironment(env)
-                    .setConsole(false)
-                    .start();
+                    .setConsole(false);
+            if (spec.workingDir() != null) {
+                ptyBuilder.setDirectory(spec.workingDir().getAbsolutePath());
+            }
+            ptyProcess = ptyBuilder.start();
 
             TtyConnector connector = new ClaudeTtyConnector(ptyProcess);
 
@@ -152,47 +162,6 @@ public class ClaudeTerminalPanel extends JPanel implements Disposable {
         if (ptyProcess != null && ptyProcess.isAlive()) {
             ptyProcess.destroy();
         }
-    }
-
-    // ── Command Building ───────────────────────────────────────────
-
-    private List<String> buildCommand(ClaudeAssistSettings.State settings, String projectPath) {
-        List<String> command = new ArrayList<>();
-
-        if (settings.useWsl) {
-            command.add("wsl.exe");
-            if (!settings.wslDistro.isEmpty()) {
-                command.add("-d");
-                command.add(settings.wslDistro);
-            }
-            command.add("--");
-            command.add("bash");
-            command.add("-lc");
-
-            String wslPath = projectPath != null ? ClaudeAssistService.toWslPath(projectPath) : "~";
-            StringBuilder bashCmd = new StringBuilder();
-            bashCmd.append("cd '").append(wslPath).append("' && ");
-            bashCmd.append(settings.claudePath);
-            if (!settings.model.isEmpty()) {
-                bashCmd.append(" --model '").append(settings.model).append("'");
-            }
-            command.add(bashCmd.toString());
-        } else {
-            command.add("bash");
-            command.add("-lc");
-
-            StringBuilder bashCmd = new StringBuilder();
-            if (projectPath != null) {
-                bashCmd.append("cd '").append(projectPath).append("' && ");
-            }
-            bashCmd.append(settings.claudePath);
-            if (!settings.model.isEmpty()) {
-                bashCmd.append(" --model '").append(settings.model).append("'");
-            }
-            command.add(bashCmd.toString());
-        }
-
-        return command;
     }
 
     // ── Process Monitoring ─────────────────────────────────────────

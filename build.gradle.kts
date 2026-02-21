@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.kacmedija.claudeassist"
-version = "0.4.1"
+version = "0.4.3"
 
 repositories {
     mavenCentral()

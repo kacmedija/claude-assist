@@ -1,6 +1,6 @@
 package com.kacmedija.claudeassist.review;
 
-import com.kacmedija.claudeassist.services.ClaudeAssistService;
+import com.kacmedija.claudeassist.services.CommandExecutor;
 import com.kacmedija.claudeassist.services.ContextManager;
 import com.kacmedija.claudeassist.services.StreamJsonService;
 import com.kacmedija.claudeassist.settings.ClaudeAssistSettings;
@@ -45,8 +45,6 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -603,9 +601,12 @@ public final class ReviewDetailPanel extends JPanel {
             Files.writeString(tempFile, prompt, StandardCharsets.UTF_8);
 
             String workDir = ContextManager.getInstance(project).getWorkDir();
-            List<String> command = buildRetestCommand(settings, tempFile, workDir);
 
-            ProcessBuilder pb = new ProcessBuilder(command);
+            CommandExecutor.ProcessSpec spec = CommandExecutor.claude(
+                    settings, tempFile, workDir,
+                    "--print", "--verbose", "--output-format", "stream-json");
+
+            ProcessBuilder pb = spec.createProcessBuilder();
             pb.environment().remove("CLAUDECODE");
             pb.redirectErrorStream(false);
 
@@ -704,41 +705,6 @@ public final class ReviewDetailPanel extends JPanel {
 
         // Conservative default: still present
         return true;
-    }
-
-    @NotNull
-    private List<String> buildRetestCommand(
-            @NotNull ClaudeAssistSettings.State settings,
-            @NotNull Path promptTempFile,
-            @Nullable String workDir
-    ) {
-        List<String> command = new ArrayList<>();
-        StringBuilder claudeArgs = new StringBuilder("--print --verbose --output-format stream-json");
-        if (!settings.model.isEmpty()) {
-            claudeArgs.append(" --model '").append(settings.model).append("'");
-        }
-
-        if (settings.useWsl) {
-            command.add("wsl.exe");
-            if (!settings.wslDistro.isEmpty()) {
-                command.add("-d");
-                command.add(settings.wslDistro);
-            }
-            command.add("--");
-            command.add("bash");
-            command.add("-lc");
-            String wslTemp = ClaudeAssistService.toWslPath(promptTempFile.toString());
-            String wslWork = workDir != null ? ClaudeAssistService.toWslPath(workDir) : null;
-            String cdPart = wslWork != null ? "cd '" + wslWork + "' && " : "";
-            command.add(cdPart + "cat '" + wslTemp + "' | " + settings.claudePath + " " + claudeArgs);
-        } else {
-            command.add("bash");
-            command.add("-lc");
-            String cdPart = workDir != null ? "cd '" + workDir + "' && " : "";
-            command.add(cdPart + "cat '" + promptTempFile + "' | " + settings.claudePath + " " + claudeArgs);
-        }
-
-        return command;
     }
 
     @NotNull
