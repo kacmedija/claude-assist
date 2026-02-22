@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.kacmedija.claudeassist"
-version = "0.4.3"
+version = "0.4.4"
 
 repositories {
     mavenCentral()
@@ -31,7 +31,7 @@ intellij {
 tasks {
     patchPluginXml {
         sinceBuild.set("241")
-        untilBuild.set("252.*")
+        untilBuild.set("253.*")
         changeNotes.set("""
             <h3>0.2.0</h3>
             <ul>
