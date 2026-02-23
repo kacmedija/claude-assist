@@ -130,7 +130,6 @@ public class ClaudeTerminalPanel extends JPanel implements Disposable {
             add(terminalWidget, BorderLayout.CENTER);
 
             terminalWidget.createTerminalSession(connector);
-            terminalWidget.start();
 
             revalidate();
             repaint();
