@@ -167,10 +167,15 @@ public class ClaudeTerminalPanel extends JPanel implements Disposable {
     // ── Process Monitoring ─────────────────────────────────────────
 
     private void startProcessMonitor() {
+        PtyProcess monitoredProcess = ptyProcess;
         Thread monitor = new Thread(() -> {
             try {
-                int exitCode = ptyProcess.waitFor();
-                SwingUtilities.invokeLater(() -> showRestartOption(exitCode));
+                int exitCode = monitoredProcess.waitFor();
+                SwingUtilities.invokeLater(() -> {
+                    if (ptyProcess == monitoredProcess) {
+                        showRestartOption(exitCode);
+                    }
+                });
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
