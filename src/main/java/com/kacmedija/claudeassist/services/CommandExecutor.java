@@ -381,6 +381,7 @@ public final class CommandExecutor {
                     || c == '}' || c == '[' || c == ']' || c == '|' || c == '&'
                     || c == ';' || c == '<' || c == '>' || c == '*' || c == '?'
                     || c == '#' || c == '~') {
+
                 return true;
             }
         }
